@@ -116,6 +116,21 @@ with tab1:
     direction_options = sorted(selected_line.replace("KTM ", "").replace("Intercity ", "").replace("Electric Train Service", "").split(" - "))
     selected_direction = st.selectbox('Train travel from', options=direction_options)
 
+    routes_trip_df[['start_station', 'end_station']] = routes_trip_df['route_long_name'].str.replace("KTM ", "").str.split(' - ', expand=True)
+    swap_condition = routes_trip_df['direction_id'] == 1
+    routes_trip_df.loc[swap_condition, ['start_station', 'end_station']] = routes_trip_df.loc[swap_condition, ['end_station', 'start_station']].values
+    first_match_trip = routes_trip_df.loc[routes_trip_df['start_station'] == selected_direction].iloc[0]
+
+    train_stop_times = stop_times_df[stop_times_df['trip_id'] == first_match_trip['trip_id']] 
+    station_df = pd.merge(train_stop_times, stops_df, on='stop_id', how='inner').copy()
+    station_df['relative_distance'] = station_df['shape_dist_traveled'].diff()
+    station_df['relative_distance'] = station_df['relative_distance'].fillna(0)
+
+    station_df['arrival_time'] = pd.to_timedelta(station_df['arrival_time'])
+    station_df['relative_time'] = station_df['arrival_time'].diff()
+    station_df['relative_time'] = station_df['relative_time'].fillna(pd.Timedelta(seconds=0))
+
+
 with tab2:
     if st.session_state.active_tab != 'Tab 2':
         st.session_state.active_tab = 'Tab 2'
@@ -129,10 +144,6 @@ with tab2:
             train_data_sequence = train_data_df.squeeze()
             st.write(train_data_df)
 
-            routes_trip_df[['start_station', 'end_station']] = routes_trip_df['route_long_name'].str.replace("KTM ", "").str.split(' - ', expand=True)
-            swap_condition = routes_trip_df['direction_id'] == 1
-            routes_trip_df.loc[swap_condition, ['start_station', 'end_station']] = routes_trip_df.loc[swap_condition, ['end_station', 'start_station']].values
-            first_match_trip = routes_trip_df.loc[routes_trip_df['start_station'] == selected_direction].iloc[0]
 
             # Find best trains to match the schedule
             df = pd.merge(st.session_state.train_df, routes_trip_df, left_on='tripId',right_on='trip_id', how='inner')
@@ -140,24 +151,9 @@ with tab2:
             st.write('Best candidates')
             st.write(df_train_candidates[['label', 'latitude', 'longitude', 'speed', 'route_long_name']])
 
-            # sequence_list = train_data_sequence[['latitude', 'longitude', 'bearing', 'speed', 'label']].tolist()
-            # cols = st.columns(len(sequence_list))
-            # # Display each value in a separate column
-            # for i, num in enumerate(sequence_list):
-            #     cols[i].write(num)
-
             train_data = train_data_sequence.to_dict()
 
-            train_stop_times = stop_times_df[stop_times_df['trip_id'] == first_match_trip['trip_id']] 
-            df = pd.merge(train_stop_times, stops_df, on='stop_id', how='inner').copy()
-            df['relative_distance'] = df['shape_dist_traveled'].diff()
-            df['relative_distance'] = df['relative_distance'].fillna(0)
-
-            df['arrival_time'] = pd.to_timedelta(df['arrival_time'])
-            df['relative_time'] = df['arrival_time'].diff()
-            df['relative_time'] = df['relative_time'].fillna(pd.Timedelta(seconds=0))
-
-            geo_df = df[['stop_lat', 'stop_lon']].copy()
+            geo_df = station_df[['stop_lat', 'stop_lon']].copy()
             stations_lat_lon = geo_df.to_dict(orient='records')
 
             nearest_station_index = find_nearest_point(train_data, stations_lat_lon)
@@ -187,7 +183,7 @@ with tab2:
                 </div>
                 """, 
                 unsafe_allow_html=True)
-            for station_id, station in enumerate(df['stop_name'].squeeze().to_list()):
+            for station_id, station in enumerate(station_df['stop_name'].squeeze().to_list()):
                 color = f"#{first_match_trip['route_color']}"
                 if first_match_trip['direction_id'] == 1:
                     if station_id < nearest_station_index:
@@ -204,8 +200,8 @@ with tab2:
                 st.markdown(
                     f"""
                     <div style="text-align:right; display: flex; justfy-content: left">
-                        <div style="width: 10rem;margin-right: 10px;white-space: normal;">{df.loc[station_id, 'relative_time'].total_seconds() // 60}</div>
-                        <div style="width: 10rem;margin-right: 10px;white-space: normal;">{round(df.loc[station_id, 'relative_distance'], 2)}</div>
+                        <div style="width: 10rem;margin-right: 10px;white-space: normal;">{station_df.loc[station_id, 'relative_time'].total_seconds() // 60}</div>
+                        <div style="width: 10rem;margin-right: 10px;white-space: normal;">{round(station_df.loc[station_id, 'relative_distance'], 2)}</div>
                         <div style="width:1rem; height:1rem; margin:auto; background-color:{color}; border-radius:50%;"></div>
                         <div style="width: 10rem;margin-right: 10px;white-space: normal;">{string.capwords(station)}</div>
                     </div>

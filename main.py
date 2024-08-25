@@ -157,7 +157,7 @@ with tab2:
 
         train_data_df = train_df[train_df['label'] == selected_train]
         train_data_sequence = train_data_df.squeeze()
-        placeholder1.write(train_data_df)
+        placeholder1.write(train_data_df[['label', 'latitude', 'longitude', 'speed']])
 
 
         # Find best trains to match the schedule
@@ -165,14 +165,17 @@ with tab2:
         if selected_direction is not None:
             df_train_candidates = df.loc[df['start_station'] == selected_direction]
             placeholder2.write('Best candidates')
-            placeholder3.write(df_train_candidates[['label', 'latitude', 'longitude', 'speed', 'route_long_name']])
+            placeholder3.write(df_train_candidates[['label', 'latitude', 'longitude', 'speed']])
 
         train_data = train_data_sequence.to_dict()
 
         
+
         stations_lat_lon = station_df[['stop_lat', 'stop_lon']].to_dict(orient='records')
         nearest_station_index = find_nearest_point(train_data, stations_lat_lon)
 
+        lat_train, lon_train = train_data['latitude'], train_data['longitude']
+        lat_stop, lon_stop = station_df.loc[selected_station_index,'stop_lat'], station_df.loc[selected_station_index,'stop_lon']
 
         geo_df = station_df[['stop_lat', 'stop_lon', 'stop_name']].copy()
         if pd.isna(first_match_trip['route_color']):
@@ -185,7 +188,7 @@ with tab2:
         geo_df.loc[geo_df['stop_name'] == selected_station, 'color'] = '#FFA500'
         geo_df['size'] = '100'
         geo_df = pd.concat(
-            [pd.DataFrame([[train_data['latitude'], train_data['longitude'], 'train','#FFFFFF',200]], columns=geo_df.columns), geo_df], ignore_index=True)
+            [pd.DataFrame([[lat_train, lon_train, 'train','#FFFFFF',200]], columns=geo_df.columns), geo_df], ignore_index=True)
         placeholder4.map(geo_df, latitude='stop_lat', longitude='stop_lon', color='color')
 
         can_reach = False
@@ -195,8 +198,11 @@ with tab2:
         else:
             if nearest_station_index >= selected_station_index:
                 can_reach = True
-
-        placeholder7.write(f"Expected arival in {haversine(train_data['latitude'], train_data['longitude'], station_df.loc[selected_station_index,'stop_lat'], station_df.loc[selected_station_index,'stop_lon']) if can_reach else "--"} minute" )
+        if can_reach and train_data['speed'] > 0:
+            expected_time = haversine(lat_train, lon_train, lat_stop, lon_stop) / train_data['speed'] * 60.0 
+        else:
+            expected_time = "--"
+        placeholder7.write(f"Expected arival in {expected_time} minute" )
 
 
         # # Display the stations on a straight line

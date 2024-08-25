@@ -60,6 +60,7 @@ dtype_spec = {
 if "last_fetch_time" not in st.session_state:
     st.session_state.last_fetch_time = 0
 
+@st.cache_data(ttl=60)
 def fetch_trains():
     for _ in range(100):
         if time.time() - st.session_state.last_fetch_time > 60: 

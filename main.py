@@ -92,30 +92,32 @@ routes_trip_df = pd.merge(trips_df, routes_df, how='inner')
 
 if 'train_df' not in st.session_state:
     st.session_state.train_df = fetch_trains()
-placeholder = st.empty()
 
-st.title("Train Tracker")
-with st.sidebar:
+tab1, tab2 = st.tabs(["Tracking info", "Monitoring"])
+
+
+with tab1:
+    st.title("Train Tracker")
     selected_line = st.selectbox("Select a route to track", options=routes_df['route_long_name'])
     selected_direction = st.selectbox('Train travel from', options=selected_line.replace("KTM ", "").replace("Intercity ", "").replace("Electric Train Service", "").split(" - "))
     if 'train_df' in st.session_state:
-        selected_train = st.selectbox('Train label', options=st.session_state.train_df['label'])
-        button_pressed = st.button("Monitor")
-if selected_train is not None:
-    routes_trip_df[['start_station', 'end_station']] = routes_trip_df['route_long_name'].str.replace("KTM ", "").str.split(' - ', expand=True)
-    swap_condition = routes_trip_df['direction_id'] == 1
-    routes_trip_df.loc[swap_condition, ['start_station', 'end_station']] = routes_trip_df.loc[swap_condition, ['end_station', 'start_station']].values
-    first_match_trip = routes_trip_df.loc[routes_trip_df['start_station'] == selected_direction].iloc[0]
+        selected_train = st.selectbox('Train label', options=st.session_state.train_df.sort_values(by='label', ascending=False)['label'])
+    if selected_train is not None:
+        routes_trip_df[['start_station', 'end_station']] = routes_trip_df['route_long_name'].str.replace("KTM ", "").str.split(' - ', expand=True)
+        swap_condition = routes_trip_df['direction_id'] == 1
+        routes_trip_df.loc[swap_condition, ['start_station', 'end_station']] = routes_trip_df.loc[swap_condition, ['end_station', 'start_station']].values
+        first_match_trip = routes_trip_df.loc[routes_trip_df['start_station'] == selected_direction].iloc[0]
 
-    # Find best trains to match the schedule
-    df = pd.merge(st.session_state.train_df, routes_trip_df, left_on='tripId',right_on='trip_id', how='inner')
-    df_train_candidates = df.loc[df['start_station'] == selected_direction]
-    st.write('Best candidates')
-    st.write(df_train_candidates[['label', 'latitude', 'longitude', 'speed', 'route_long_name']])
+        # Find best trains to match the schedule
+        df = pd.merge(st.session_state.train_df, routes_trip_df, left_on='tripId',right_on='trip_id', how='inner')
+        df_train_candidates = df.loc[df['start_station'] == selected_direction]
+        st.write('Best candidates')
+        st.write(df_train_candidates[['label', 'latitude', 'longitude', 'speed', 'route_long_name']])
 
-
-if button_pressed:
-    while True: 
+with tab2:
+    button_pressed = st.button("Monitor")
+    placeholder = st.empty()
+    while button_pressed: 
         train_df = fetch_trains()
         with placeholder.container():
             # train_data_sequence = df_train_candidates[df_train_candidates['label'] == selected_train].squeeze()

@@ -127,6 +127,10 @@ with tab1:
     station_df['arrival_time'] = pd.to_timedelta(station_df['arrival_time'])
     station_df['relative_time'] = station_df['arrival_time'].diff()
     station_df['relative_time'] = station_df['relative_time'].fillna(pd.Timedelta(seconds=0))
+    station_df['stop_name'] = station_df['stop_name'].apply(lambda x : string.capwords(x))
+
+    selected_station = st.selectbox('Boarding station', key='board', options=station_df['stop_name'], index=16)
+    selected_station_index = station_df['stop_name'].squeeze().tolist().index(selected_station)
 
 
 with tab2:
@@ -139,11 +143,12 @@ with tab2:
     placeholder1 = st.empty()
     placeholder2 = st.empty()
     placeholder3 = st.empty()
+    placeholder7 = st.empty()
     placeholder4 = st.empty()
 
     placeholder5 = st.empty()
     placeholder6 = []
-    for i in range(len(station_df)):
+    for i in range(len(station_df) + 1):
         placeholder6.append(st.empty())
 
 
@@ -164,11 +169,12 @@ with tab2:
 
         train_data = train_data_sequence.to_dict()
 
-        geo_df = station_df[['stop_lat', 'stop_lon']].copy()
-        stations_lat_lon = geo_df.to_dict(orient='records')
-
+        
+        stations_lat_lon = station_df[['stop_lat', 'stop_lon']].to_dict(orient='records')
         nearest_station_index = find_nearest_point(train_data, stations_lat_lon)
 
+
+        geo_df = station_df[['stop_lat', 'stop_lon', 'stop_name']].copy()
         if pd.isna(first_match_trip['route_color']):
             first_match_trip['route_color'] = 'FF0000'
         geo_df['color'] = f"#{first_match_trip['route_color']}"
@@ -176,11 +182,21 @@ with tab2:
             geo_df.iloc[:nearest_station_index, geo_df.columns.get_loc('color')] = '#00FF00'
         else:
             geo_df.iloc[nearest_station_index + 1:, geo_df.columns.get_loc('color')] = '#00FF00'
-
+        geo_df.loc[geo_df['stop_name'] == selected_station, 'color'] = '#FFA500'
         geo_df['size'] = '100'
         geo_df = pd.concat(
-            [pd.DataFrame([[train_data['latitude'], train_data['longitude'], '#FFFFFF',200]], columns=geo_df.columns), geo_df], ignore_index=True)
+            [pd.DataFrame([[train_data['latitude'], train_data['longitude'], 'train','#FFFFFF',200]], columns=geo_df.columns), geo_df], ignore_index=True)
         placeholder4.map(geo_df, latitude='stop_lat', longitude='stop_lon', color='color')
+
+        can_reach = False
+        if first_match_trip['direction_id'] == 1:
+            if nearest_station_index <= selected_station_index:
+                can_reach = True
+        else:
+            if nearest_station_index >= selected_station_index:
+                can_reach = True
+
+        placeholder7.write(f"Expected arival in {haversine(train_data['latitude'], train_data['longitude'], station_df.loc[selected_station_index,'stop_lat'], station_df.loc[selected_station_index,'stop_lon']) if can_reach else "--"} minute" )
 
 
         # # Display the stations on a straight line
@@ -201,6 +217,7 @@ with tab2:
                     color = "#00FF00"
                 if station_id == nearest_station_index:
                     color = "#FFFFFF"
+                
 
             else:
                 if station_id > nearest_station_index:
@@ -208,13 +225,15 @@ with tab2:
                 if station_id == nearest_station_index:
                     color = "#FFFFFF"
 
+            if station == selected_station:
+                color = "#FFA500"
             placeholder6[station_id].markdown(
                 f"""
                 <div style="text-align:right; display: flex; justfy-content: left">
                     <div style="width: 10rem;margin-right: 10px;white-space: normal;">{station_df.loc[station_id, 'relative_time'].total_seconds() // 60}</div>
                     <div style="width: 10rem;margin-right: 10px;white-space: normal;">{round(station_df.loc[station_id, 'relative_distance'], 2)}</div>
                     <div style="width:1rem; height:1rem; margin:auto; background-color:{color}; border-radius:50%;"></div>
-                    <div style="width: 10rem;margin-right: 10px;white-space: normal;">{string.capwords(station)}</div>
+                    <div style="width: 10rem;margin-right: 10px;white-space: normal;">{station}</div>
                 </div>
                 """, 
                 unsafe_allow_html=True)

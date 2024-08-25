@@ -1,0 +1,10 @@
+agency_id,route_id,route_type,route_short_name,route_long_name,route_desc,route_url,route_color,route_text_color
+ktmb,KC05_KB18,0,Seremban Line,KTM Batu Caves - Pulau Sebang/Tampin,,https://www.ktmb.com.my/komuter-routes-map.html,3C5A9F,FFFFFF
+ktmb,KA15_KD19,0,Port Klang Line,KTM Tanjung Malim - Pelabuhan Klang,,https://www.ktmb.com.my/komuter-routes-map.html,DC2420,FFFFFF
+ktmb,100_47300,0,Padang Besar Line,KTM Butterworth - Padang Besar,,https://www.ktmb.com.my/komuter-routes-map.html,018000,FFFFFF
+ktmb,100_9000,0,Ipoh Line,KTM Butterworth - Ipoh,,https://www.ktmb.com.my/komuter-routes-map.html,1964B7,FFFFFF
+ktmb,SH,2,SH,Intercity Shuttle Tumpat - Gemas,,https://www.ktmb.com.my/intercity-routes-map.html,,
+ktmb,ERT,2,ERT,Intercity Ekspres Rakyat Timuran Tumpat - JB Sentral,,https://www.ktmb.com.my/intercity-routes-map.html,,
+ktmb,ES,2,ES,Intercity Ekspres Selatan Gemas - JB Sentral,,https://www.ktmb.com.my/intercity-routes-map.html,,
+ktmb,ST,2,ST,Intercity Shuttle Tebrau JB Sentral - Woodlands,,https://www.ktmb.com.my/intercity-routes-map.html,,
+ktmb,ETS,2,ETS,Electric Train Service Padang Besar - Gemas,,https://www.ktmb.com.my/intercity-routes-map.html,,

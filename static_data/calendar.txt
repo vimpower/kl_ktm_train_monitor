@@ -1,0 +1,6 @@
+service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date
+komuter_weekend,0,0,0,0,0,1,1,20240824,20240825
+komuter_weekday,1,1,1,1,1,0,0,20240823,20240823
+komuter_utara,1,1,1,1,1,1,1,20230916,20250131
+ets,1,1,1,1,1,1,1,20240801,20250228
+intercity,1,1,1,1,1,1,1,20220115,20250228

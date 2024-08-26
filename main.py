@@ -3,7 +3,9 @@ import pandas as pd
 import requests
 import time
 import string
-from math import radians, sin, cos, sqrt, atan2, nan
+import zipfile
+import io
+from math import radians, sin, cos, sqrt, atan2
 
 
 
@@ -43,57 +45,78 @@ def find_nearest_point(train_data, points):
     
     return nearest_point_index
 
-# Set API endpoint
-url = 'https://api.mtrec.name.my/api/position?agency=ktmb'
-
-# # Function to fetch trains
-dtype_spec = {
-    "tripId" : "str",
-    "latitude": "int64",
-    "longitude": "int64",
-    "bearing": "int64",
-    "speed": "int64",
-    "id": "str",
-    "label": "str",
-}
-
-if "last_fetch_time" not in st.session_state:
-    st.session_state.last_fetch_time = 0
-
-
 
 @st.cache_data(max_entries=2, ttl=60, show_spinner=True)
 def fetch_trains():
-    for _ in range(100):
-        if time.time() - st.session_state.last_fetch_time > 60: 
-            response = requests.get(url)
-            print("Fetching data ...")
-            if response.status_code == 200:
-                st.session_state.last_fetch_time = time.time()
-                json_data = response.json()
-                data = pd.DataFrame(json_data['data'])
+    # Set API endpoint
+    url = 'https://api.mtrec.name.my/api/position?agency=ktmb'
 
-                # Write the DataFrame to an Excel file
-                trip_df = pd.json_normalize(data['trip'])
-                position_df = pd.json_normalize(data['position'])
-                # timestamp_df = pd.DataFrame.from_dict(data['timestamp'], orient='index', columns=['timestamp'])
-                vehicle_df = pd.json_normalize(data['vehicle'])
+    # # Function to fetch trains
+    dtype_spec = {
+        "tripId" : "str",
+        "latitude": "int64",
+        "longitude": "int64",
+        "bearing": "int64",
+        "speed": "int64",
+        "id": "str",
+        "label": "str",
+    }
+    while True: 
+        response = requests.get(url)
+        print("Fetching train data ...")
+        if response.status_code == 200:
+            json_data = response.json()
+            data = pd.DataFrame(json_data['data'])
 
-                # Concatenate all dataframes into one
-                df = pd.concat([trip_df, position_df, vehicle_df], axis=1)
-                df.astype(dtype_spec)
-                print("Done fetching ...")
-                return df
-            else:
-                time.sleep(10.0)
-    
+            # Write the DataFrame to an Excel file
+            trip_df = pd.json_normalize(data['trip'])
+            position_df = pd.json_normalize(data['position'])
+            # timestamp_df = pd.DataFrame.from_dict(data['timestamp'], orient='index', columns=['timestamp'])
+            vehicle_df = pd.json_normalize(data['vehicle'])
+
+            # Concatenate all dataframes into one
+            df = pd.concat([trip_df, position_df, vehicle_df], axis=1)
+            df.astype(dtype_spec)
+            print("Done fetching ...")
+            return df
+        elif response.status_code == 429:
+            # Rate limit reset
+            print("Too many request wait for 10 seconds")
+            time.sleep(10.5)
+        else:
+            print(f"Other error with status code {response.status_code} coldown in 10 seconds")
+            time.sleep(10.5)
+
+@st.cache_data(max_entries=2, ttl=3600, show_spinner=True)
+def fetch_static():
+    while True:
+        print("Fetching static data ...")
+        url = ' https://api.data.gov.my/gtfs-static/ktmb'
+        response = requests.get(url) 
+        if response.status_code == 200:
+            # Use the BytesIO object to read the binary content
+            zip_file = io.BytesIO(response.content)
+            
+            # Open the ZIP file
+            with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+                # Extract all files in the current directory
+                zip_ref.extractall('./static_data')
+
+            trips_df = pd.read_csv('static_data/trips.txt')
+            routes_df = pd.read_csv('static_data/routes.txt')
+            stops_df = pd.read_csv('static_data/stops.txt')
+            stop_times_df = pd.read_csv('static_data/stop_times.txt')
+            return trips_df, routes_df, stops_df, stop_times_df
+        elif response.status_code == 429:
+            # Rate limit reset
+            print("Too many request wait for 10 seconds")
+            time.sleep(10.5)
+        else:
+            print(f"Other error with status code {response.status_code} coldown in 10 seconds")
+            time.sleep(10.5)
 
 
-trips_df = pd.read_csv('static_data/trips.txt')
-routes_df = pd.read_csv('static_data/routes.txt')
-stops_df = pd.read_csv('static_data/stops.txt')
-stop_times_df = pd.read_csv('static_data/stop_times.txt')
-
+trips_df, routes_df, stops_df, stop_times_df = fetch_static()
 routes_trip_df = pd.merge(trips_df, routes_df, how='inner')
 
 
@@ -110,7 +133,7 @@ with tab1:
     if st.session_state.active_tab != 'Tab 1':
         st.session_state.active_tab = 'Tab 1'
     st.title("Train Tracker")
-    selected_line = st.selectbox("Select a route to track", key='line', options=routes_df['route_long_name'])
+    selected_line = st.selectbox("Select a route to track", key='line', options=routes_df['route_long_name'], index=1)
     direction_options = sorted(selected_line.replace("KTM ", "").replace("Intercity ", "").replace("Electric Train Service", "").split(" - "))
     selected_direction = st.selectbox('Train travel from', key='direction', options=direction_options)
 

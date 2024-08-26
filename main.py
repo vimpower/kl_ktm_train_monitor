@@ -67,18 +67,21 @@ def fetch_trains():
         if response.status_code == 200:
             json_data = response.json()
             data = pd.DataFrame(json_data['data'])
+            
+            if len(data) > 0:
+                # Write the DataFrame to an Excel file
+                trip_df = pd.json_normalize(data['trip'])
+                position_df = pd.json_normalize(data['position'])
+                # timestamp_df = pd.DataFrame.from_dict(data['timestamp'], orient='index', columns=['timestamp'])
+                vehicle_df = pd.json_normalize(data['vehicle'])
 
-            # Write the DataFrame to an Excel file
-            trip_df = pd.json_normalize(data['trip'])
-            position_df = pd.json_normalize(data['position'])
-            # timestamp_df = pd.DataFrame.from_dict(data['timestamp'], orient='index', columns=['timestamp'])
-            vehicle_df = pd.json_normalize(data['vehicle'])
-
-            # Concatenate all dataframes into one
-            df = pd.concat([trip_df, position_df, vehicle_df], axis=1)
-            df.astype(dtype_spec)
-            print("Done fetching ...")
-            return df
+                # Concatenate all dataframes into one
+                df = pd.concat([trip_df, position_df, vehicle_df], axis=1)
+                df.astype(dtype_spec)
+                print("Done fetching ...")
+                return df
+            else:
+                return None
         elif response.status_code == 429:
             # Rate limit reset
             print("Too many request wait for 10 seconds")
@@ -161,7 +164,7 @@ with tab2:
         st.session_state.active_tab = 'Tab 2'
 
     train_df = fetch_trains()
-    selected_train = st.selectbox('Train label', key='train', options=train_df.sort_values(by='label', ascending=False)['label'])
+    selected_train = st.selectbox('Train label', key='train', options=train_df.sort_values(by='label', ascending=False)['label'] if train_df is not None else [])
 
     placeholder1 = st.empty()
     placeholder2 = st.empty()
@@ -175,7 +178,7 @@ with tab2:
         placeholder6.append(st.empty())
 
 
-    while st.session_state.active_tab == 'Tab 2': 
+    while (train_df is not None and st.session_state.active_tab == 'Tab 2'): 
         train_df = fetch_trains()
 
         train_data_df = train_df[train_df['label'] == selected_train]

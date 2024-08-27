@@ -143,10 +143,11 @@ with tab1:
     routes_trip_df[['start_station', 'end_station']] = routes_trip_df['route_long_name'].str.replace("KTM ", "").str.split(' - ', expand=True)
     swap_condition = routes_trip_df['direction_id'] == 1
     routes_trip_df.loc[swap_condition, ['start_station', 'end_station']] = routes_trip_df.loc[swap_condition, ['end_station', 'start_station']].values
-    first_match_trip = routes_trip_df.loc[routes_trip_df['start_station'] == selected_direction].iloc[0]
 
+    first_match_trip = routes_trip_df.loc[routes_trip_df['start_station'] == selected_direction].iloc[0]
     train_stop_times = stop_times_df[stop_times_df['trip_id'] == first_match_trip['trip_id']] 
     station_df = pd.merge(train_stop_times, stops_df, on='stop_id', how='inner').copy()
+    
     station_df['relative_distance'] = station_df['shape_dist_traveled'].diff()
     station_df['relative_distance'] = station_df['relative_distance'].fillna(0)
 
@@ -234,10 +235,9 @@ with tab2:
         # # Display the stations on a straight line
         placeholder5.markdown(
             f"""
-            <div style="text-align:right; display: flex; justfy-content: left">
+            <div style="text-align:right; display: flex; justfy-content: left;">
                 <div style="width: 10rem;margin-right: 10px;white-space: normal;">Distance [km]</div>
                 <div style="width: 10rem;margin-right: 10px;white-space: normal;">Time estimated [min]</div>
-                <div style="width: 1rem;margin-right: 10px;white-space: normal;">Status</div>
                 <div style="width: 10rem;margin-right: 10px;white-space: normal;">Station</div>
             </div>
             """, 
@@ -246,26 +246,25 @@ with tab2:
             color = f"#{first_match_trip['route_color']}"
             if first_match_trip['direction_id'] == 1:
                 if station_id < nearest_station_index:
-                    color = "#00FF00"
+                    color = "#016620"
                 if station_id == nearest_station_index:
-                    color = "#FFFFFF"
+                    color = "#999999"
                 
 
             else:
                 if station_id > nearest_station_index:
-                    color = "#00FF00"
+                    color = "#016620"
                 if station_id == nearest_station_index:
-                    color = "#FFFFFF"
+                    color = "#999999"
 
             if station == selected_station:
                 color = "#FFA500"
             placeholder6[station_id].markdown(
                 f"""
-                <div style="text-align:right; display: flex; justfy-content: left">
-                    <div style="width: 10rem;margin-right: 10px;white-space: normal;">{station_df.loc[station_id, 'relative_time'].total_seconds() // 60}</div>
-                    <div style="width: 10rem;margin-right: 10px;white-space: normal;">{round(station_df.loc[station_id, 'relative_distance'], 2)}</div>
-                    <div style="width:1rem; height:1rem; margin:auto; background-color:{color}; border-radius:50%;"></div>
-                    <div style="width: 10rem;margin-right: 10px;white-space: normal;">{station}</div>
+                <div style="text-align:right; display: flex; justfy-content: left; background-color:{color};">
+                    <div style="width: 25%;">{station_df.loc[station_id, 'relative_time'].total_seconds() // 60}</div>
+                    <div style="width: 25%;">{round(station_df.loc[station_id, 'relative_distance'], 2)}</div>
+                    <div style="width: 50%;">{station}</div>
                 </div>
                 """, 
                 unsafe_allow_html=True)

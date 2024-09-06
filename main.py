@@ -10,7 +10,7 @@ import datetime
 from math import radians, sin, cos, sqrt, atan2
 from streamlit_autorefresh import st_autorefresh
 
-st_autorefresh(interval=5000, key="data_refresh")
+st_autorefresh(interval=60000, key="data_refresh")
 
 def haversine(lat1, lon1, lat2, lon2):
     # Radius of the Earth in kilometers

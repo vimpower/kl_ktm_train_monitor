@@ -5,9 +5,12 @@ import time
 import string
 import zipfile
 import io
+import pytz
+import datetime
 from math import radians, sin, cos, sqrt, atan2
+from streamlit_autorefresh import st_autorefresh
 
-
+st_autorefresh(interval=5000, key="data_refresh")
 
 def haversine(lat1, lon1, lat2, lon2):
     # Radius of the Earth in kilometers
@@ -72,11 +75,13 @@ def fetch_trains():
                 # Write the DataFrame to an Excel file
                 trip_df = pd.json_normalize(data['trip'])
                 position_df = pd.json_normalize(data['position'])
-                # timestamp_df = pd.DataFrame.from_dict(data['timestamp'], orient='index', columns=['timestamp'])
+                timestamp_df = pd.DataFrame(data['timestamp'])
+                timezone = pytz.timezone('Asia/Kuala_Lumpur')
+                timestamp_df['localtime'] = timestamp_df['timestamp'].apply(lambda x : datetime.datetime.fromtimestamp(int(x)).replace(tzinfo=pytz.utc).astimezone(timezone))
                 vehicle_df = pd.json_normalize(data['vehicle'])
 
                 # Concatenate all dataframes into one
-                df = pd.concat([trip_df, position_df, vehicle_df], axis=1)
+                df = pd.concat([trip_df, position_df, vehicle_df, timestamp_df], axis=1)
                 df.astype(dtype_spec)
                 print("Done fetching ...")
                 return df
@@ -90,11 +95,12 @@ def fetch_trains():
             print(f"Other error with status code {response.status_code} coldown in 10 seconds")
             time.sleep(10.5)
 
+
 @st.cache_data(max_entries=2, ttl=3600, show_spinner=True)
 def fetch_static():
     while True:
         print("Fetching static data ...")
-        url = ' https://api.data.gov.my/gtfs-static/ktmb'
+        url = 'https://api.data.gov.my/gtfs-static/ktmb'
         response = requests.get(url) 
         if response.status_code == 200:
             # Use the BytesIO object to read the binary content
@@ -105,10 +111,29 @@ def fetch_static():
                 # Extract all files in the current directory
                 zip_ref.extractall('./static_data')
 
+            # Define Malaysia timezone
+            malaysia_tz = pytz.timezone('Asia/Kuala_Lumpur')
+
+            # Get today's date in Malaysia timezone
+            today_date = datetime.datetime.now(malaysia_tz).date()
+
+            def time_with_overflow_to_datetime(time_str):
+                # Split the time into hours, minutes, and seconds
+                hours, minutes, seconds = map(int, time_str.split(':'))
+                
+                # Calculate the timedelta based on hours, minutes, and seconds
+                time_delta = datetime.timedelta(hours=hours, minutes=minutes, seconds=seconds)
+                
+                # Add the timedelta to today's date
+                new_datetime = datetime.datetime.combine(today_date, datetime.datetime.min.time(), malaysia_tz) + time_delta
+                
+                return new_datetime
             trips_df = pd.read_csv('static_data/trips.txt')
             routes_df = pd.read_csv('static_data/routes.txt')
             stops_df = pd.read_csv('static_data/stops.txt')
             stop_times_df = pd.read_csv('static_data/stop_times.txt')
+            stop_times_df['arrival_time'] = stop_times_df['arrival_time'].apply(time_with_overflow_to_datetime)
+            stop_times_df['departure_time'] = stop_times_df['departure_time'].apply(time_with_overflow_to_datetime)
             return trips_df, routes_df, stops_df, stop_times_df
         elif response.status_code == 429:
             # Rate limit reset
@@ -122,150 +147,103 @@ def fetch_static():
 trips_df, routes_df, stops_df, stop_times_df = fetch_static()
 routes_trip_df = pd.merge(trips_df, routes_df, how='inner')
 
-
-# Streamlit app layout
-
-
 if 'active_tab' not in st.session_state:
     st.session_state.active_tab = 'Tab 1'
 
 tab1, tab2 = st.tabs(["Route selection", "Train selection"])
 
 
+train_df = fetch_trains()
 with tab1:
     if st.session_state.active_tab != 'Tab 1':
         st.session_state.active_tab = 'Tab 1'
-    st.title("Train Tracker")
+
+    # Streamlit app layout
     selected_line = st.selectbox("Select a route to track", key='line', options=routes_df['route_long_name'], index=1)
-    direction_options = sorted(selected_line.replace("KTM ", "").replace("Intercity ", "").replace("Electric Train Service", "").split(" - "))
-    selected_direction = st.selectbox('Train travel from', key='direction', options=direction_options)
 
-    routes_trip_df[['start_station', 'end_station']] = routes_trip_df['route_long_name'].str.replace("KTM ", "").str.split(' - ', expand=True)
-    swap_condition = routes_trip_df['direction_id'] == 1
-    routes_trip_df.loc[swap_condition, ['start_station', 'end_station']] = routes_trip_df.loc[swap_condition, ['end_station', 'start_station']].values
+    route_id = routes_df.loc[routes_df['route_long_name'] == selected_line, 'route_id'].values[0]
+    route_long_name = routes_df.loc[routes_df['route_id'] == route_id, 'route_long_name'].values[0]
 
-    first_match_trip = routes_trip_df.loc[routes_trip_df['start_station'] == selected_direction].iloc[0]
-    train_stop_times = stop_times_df[stop_times_df['trip_id'] == first_match_trip['trip_id']] 
-    station_df = pd.merge(train_stop_times, stops_df, on='stop_id', how='inner').copy()
-    
-    station_df['relative_distance'] = station_df['shape_dist_traveled'].diff()
-    station_df['relative_distance'] = station_df['relative_distance'].fillna(0)
+    endpoint_names = route_long_name.replace("KTM ", "").replace("Intercity ", "").replace("Electric Train Service", "").split(" - ")
+    selected_direction = st.selectbox('Train travel from', key='direction', options=sorted(endpoint_names))
 
-    station_df['arrival_time'] = pd.to_timedelta(station_df['arrival_time'])
-    station_df['relative_time'] = station_df['arrival_time'].diff()
-    station_df['relative_time'] = station_df['relative_time'].fillna(pd.Timedelta(seconds=0))
-    station_df['stop_name'] = station_df['stop_name'].apply(lambda x : string.capwords(x))
+    direction_id = endpoint_names.index(selected_direction)
+    trips = routes_trip_df[(routes_trip_df['route_id'] == route_id) & (routes_trip_df['direction_id'] == direction_id)] 
+    trip_stops = pd.merge(stop_times_df, trips, on="trip_id").groupby(by="trip_id").agg({'arrival_time' : 'mean'}).reset_index()
 
-    selected_station = st.selectbox('Boarding station', key='board', options=station_df['stop_name'], index=16)
-    selected_station_index = station_df['stop_name'].squeeze().tolist().index(selected_station)
+    train_trip_df = pd.merge(train_df, trips_df, left_on='tripId', right_on='trip_id')
+    # st.write(pd.merge(train_trip_df, routes_df)[['route_long_name', 'label', 'direction_id']])
+    train_trip_df['color'] = "#FF0000"
+    train_trip_df.loc[(train_trip_df['route_id'] == route_id) & (train_trip_df['direction_id'] == direction_id), 'color'] = "#00FF00"
+    st.title("Train radars 📡")
+    st.map(train_trip_df, color='color', size=500)
+
 
 
 with tab2:
     if st.session_state.active_tab != 'Tab 2':
         st.session_state.active_tab = 'Tab 2'
 
-    train_df = fetch_trains()
-    selected_train = st.selectbox('Train label', key='train', options=train_df.sort_values(by='label', ascending=False)['label'] if train_df is not None else [])
+    if train_df is not None:
+        trip_stops['delta_time'] = trip_stops['arrival_time'] - train_df['localtime'].median()
+        potential_trip = trip_stops[(trip_stops['delta_time'] < datetime.timedelta(hours=8)) & (trip_stops['delta_time'] > -datetime.timedelta(hours=8))]
+        active_trips = pd.merge(potential_trip, train_df, left_on="trip_id", right_on="tripId") 
+        selected_train = st.selectbox('Train label', key='train', options=active_trips.sort_values(by='label', ascending=False)['label'] if active_trips is not None else [])
 
-    placeholder1 = st.empty()
-    placeholder2 = st.empty()
-    placeholder3 = st.empty()
-    placeholder7 = st.empty()
-    placeholder4 = st.empty()
+        train_data = train_df[train_df['label'] == selected_train].squeeze().to_dict()
+        train_stops = pd.merge(stop_times_df[stop_times_df['trip_id'] == train_data['tripId']], stops_df, on="stop_id")
 
-    placeholder5 = st.empty()
-    placeholder6 = []
-    for i in range(len(station_df) + 1):
-        placeholder6.append(st.empty())
-
-
-    while (train_df is not None and st.session_state.active_tab == 'Tab 2'): 
-        train_df = fetch_trains()
-
-        train_data_df = train_df[train_df['label'] == selected_train]
-        train_data_sequence = train_data_df.squeeze()
-        placeholder1.write(train_data_df[['label', 'latitude', 'longitude', 'speed']])
+        # Select station to board
+        if len(train_stops) > 0:
+            board_station = st.selectbox("Boarding station", key="station", options=train_stops['stop_name'])
+            # Geo data
+            stations_lat_lon = train_stops[['stop_lat', 'stop_lon']].to_dict(orient='records')
+            nearest_station_index = find_nearest_point(train_data, stations_lat_lon)
+            selected_station_index = train_stops['stop_name'].squeeze().tolist().index(board_station)
 
 
-        # Find best trains to match the schedule
-        df = pd.merge(train_df, routes_trip_df, left_on='tripId',right_on='trip_id', how='inner')
-        if selected_direction is not None:
-            df_train_candidates = df.loc[df['start_station'] == selected_direction]
-            placeholder2.write('Best candidates')
-            placeholder3.write(df_train_candidates[['label', 'latitude', 'longitude', 'speed']])
-
-        train_data = train_data_sequence.to_dict()
-
-        
-
-        stations_lat_lon = station_df[['stop_lat', 'stop_lon']].to_dict(orient='records')
-        nearest_station_index = find_nearest_point(train_data, stations_lat_lon)
-
-        lat_train, lon_train = train_data['latitude'], train_data['longitude']
-        lat_stop, lon_stop = station_df.loc[selected_station_index,'stop_lat'], station_df.loc[selected_station_index,'stop_lon']
-
-        geo_df = station_df[['stop_lat', 'stop_lon', 'stop_name']].copy()
-        if pd.isna(first_match_trip['route_color']):
-            first_match_trip['route_color'] = 'FF0000'
-        geo_df['color'] = f"#{first_match_trip['route_color']}"
-        if first_match_trip['direction_id'] == 1:
-            geo_df.iloc[:nearest_station_index, geo_df.columns.get_loc('color')] = '#00FF00'
-        else:
-            geo_df.iloc[nearest_station_index + 1:, geo_df.columns.get_loc('color')] = '#00FF00'
-        geo_df.loc[geo_df['stop_name'] == selected_station, 'color'] = '#FFA500'
-        geo_df['size'] = '100'
-        geo_df = pd.concat(
-            [pd.DataFrame([[lat_train, lon_train, 'train','#FFFFFF',200]], columns=geo_df.columns), geo_df], ignore_index=True)
-        placeholder4.map(geo_df, latitude='stop_lat', longitude='stop_lon', color='color')
-
-        can_reach = False
-        if first_match_trip['direction_id'] == 1:
-            if nearest_station_index <= selected_station_index:
-                can_reach = True
-        else:
-            if nearest_station_index >= selected_station_index:
-                can_reach = True
-        if can_reach and train_data['speed'] > 0:
-            expected_time = haversine(lat_train, lon_train, lat_stop, lon_stop) / train_data['speed'] * 60.0 
-        else:
-            expected_time = "--"
-        placeholder7.write(f"Expected arival in {expected_time} minute" )
-
-
-        # # Display the stations on a straight line
-        placeholder5.markdown(
-            f"""
-            <div style="text-align:right; display: flex; justfy-content: left;">
-                <div style="width: 10rem;margin-right: 10px;white-space: normal;">Distance [km]</div>
-                <div style="width: 10rem;margin-right: 10px;white-space: normal;">Time estimated [min]</div>
-                <div style="width: 10rem;margin-right: 10px;white-space: normal;">Station</div>
-            </div>
-            """, 
-            unsafe_allow_html=True)
-        for station_id, station in enumerate(station_df['stop_name'].squeeze().to_list()):
-            color = f"#{first_match_trip['route_color']}"
-            if first_match_trip['direction_id'] == 1:
-                if station_id < nearest_station_index:
-                    color = "#016620"
-                if station_id == nearest_station_index:
-                    color = "#999999"
-                
-
+            lat_train, lon_train = train_data['latitude'], train_data['longitude']
+            geo_df = train_stops[['stop_lat', 'stop_lon', 'stop_name']].copy()
+            geo_df['color'] = "#FF0000"
+            if direction_id == 1:
+                geo_df.iloc[:nearest_station_index, geo_df.columns.get_loc('color')] = '#00FF00'
             else:
-                if station_id > nearest_station_index:
-                    color = "#016620"
-                if station_id == nearest_station_index:
-                    color = "#999999"
+                geo_df.iloc[nearest_station_index + 1:, geo_df.columns.get_loc('color')] = '#00FF00'
+            geo_df.loc[geo_df['stop_name'] == board_station, 'color'] = '#FFA500'
+            geo_df['size'] = '100'
+            geo_df = pd.concat(
+                [pd.DataFrame([[lat_train, lon_train, 'train','#FFFFFF',200]], columns=geo_df.columns), geo_df], ignore_index=True)
+            st.map(geo_df, latitude='stop_lat', longitude='stop_lon', color='color')
 
-            if station == selected_station:
-                color = "#FFA500"
-            placeholder6[station_id].markdown(
+            st.markdown(
                 f"""
-                <div style="text-align:right; display: flex; justfy-content: left; background-color:{color};">
-                    <div style="width: 25%;">{station_df.loc[station_id, 'relative_time'].total_seconds() // 60}</div>
-                    <div style="width: 25%;">{round(station_df.loc[station_id, 'relative_distance'], 2)}</div>
-                    <div style="width: 50%;">{station}</div>
+                <div style="text-align:right; display: flex; justfy-content: left;">
+                    <div style="width: 10rem;margin-right: 10px;white-space: normal;">Station</div>
                 </div>
                 """, 
                 unsafe_allow_html=True)
-        time.sleep(5)
+            for station_id, station in enumerate(train_stops['stop_name'].squeeze().to_list()):
+                color = "#FF0000"
+                if direction_id == 1:
+                    if station_id < nearest_station_index:
+                        color = "#016620"
+                    if station_id == nearest_station_index:
+                        color = "#999999"
+                else:
+                    if station_id > nearest_station_index:
+                        color = "#016620"
+                    if station_id == nearest_station_index:
+                        color = "#999999"
+                if station == board_station:
+                    color = "#FFA500"
+                st.markdown(
+                    f"""
+                    <div style="text-align:right; display: flex; justfy-content: left; background-color:{color};">
+                        <div style="width: 50%;">{station}</div>
+                    </div>
+                    """, 
+                    unsafe_allow_html=True)
+
+
+
+

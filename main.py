@@ -7,8 +7,10 @@ import zipfile
 import io
 import pytz
 import datetime
+import folium
 from math import radians, sin, cos, sqrt, atan2
 from streamlit_autorefresh import st_autorefresh
+from streamlit_folium import st_folium
 
 st_autorefresh(interval=60000, key="data_refresh")
 
@@ -144,6 +146,7 @@ def fetch_static():
             time.sleep(10.5)
 
 
+
 trips_df, routes_df, stops_df, stop_times_df = fetch_static()
 routes_trip_df = pd.merge(trips_df, routes_df, how='inner')
 
@@ -171,12 +174,15 @@ with tab1:
     trips = routes_trip_df[(routes_trip_df['route_id'] == route_id) & (routes_trip_df['direction_id'] == direction_id)] 
     trip_stops = pd.merge(stop_times_df, trips, on="trip_id").groupby(by="trip_id").agg({'arrival_time' : 'mean'}).reset_index()
 
-    train_trip_df = pd.merge(train_df, trips_df, left_on='tripId', right_on='trip_id')
-    # st.write(pd.merge(train_trip_df, routes_df)[['route_long_name', 'label', 'direction_id']])
-    train_trip_df['color'] = "#FF0000"
-    train_trip_df.loc[(train_trip_df['route_id'] == route_id) & (train_trip_df['direction_id'] == direction_id), 'color'] = "#00FF00"
-    st.title("Train radars 📡")
-    st.map(train_trip_df, color='color', size=500)
+    train_trip_df = pd.merge(train_df, routes_trip_df, left_on='tripId', right_on='trip_id')
+
+    m = folium.Map(location=[3.10978, 101.67453], zoom_start=10)
+    for _, train in train_trip_df.iterrows():
+        color = 'red'
+        if train['route_id'] == route_id and train['direction_id'] == direction_id:
+            color = 'blue'
+        folium.Marker([train['latitude'], train['longitude']], tooltip=f"{train['label']} - {train['route_long_name']}", icon=folium.Icon(icon="train", prefix="fa", color=color)).add_to(m)
+    map_data = st_folium(m, key="fig1", width=700, height=700)
 
 
 
@@ -194,55 +200,73 @@ with tab2:
         train_stops = pd.merge(stop_times_df[stop_times_df['trip_id'] == train_data['tripId']], stops_df, on="stop_id")
 
         # Select station to board
+        board_station = st.selectbox("Boarding station", key="station", options=train_stops['stop_name'])
+        # Geo data
+
         if len(train_stops) > 0:
-            board_station = st.selectbox("Boarding station", key="station", options=train_stops['stop_name'])
-            # Geo data
-            stations_lat_lon = train_stops[['stop_lat', 'stop_lon']].to_dict(orient='records')
-            nearest_station_index = find_nearest_point(train_data, stations_lat_lon)
-            selected_station_index = train_stops['stop_name'].squeeze().tolist().index(board_station)
+            with st.spinner(text="loading map..."):
+                m2 = folium.Map(location=[train_data['latitude'], train_data['longitude']], zoom_start=12)
+
+                stations_lat_lon = train_stops[['stop_lat', 'stop_lon']].to_dict(orient='records')
+                nearest_station_index = find_nearest_point(train_data, stations_lat_lon)
+                selected_station_index = train_stops['stop_name'].squeeze().tolist().index(board_station)
+
+                for id, station in train_stops.iterrows():
+                    color = 'red'
+                    icon = "circle-dot"
+                    prefix = "On the way"
+                    if station['stop_name'] == board_station:
+                        icon = "bullseye"
+                        color = 'orange'
+                        prefix = "Boarding Station"
+                    else:
+                        if id == nearest_station_index:
+                            color = 'lightgray'
+                            prefix = "Nearby Station"
+                        elif id < nearest_station_index:
+                            if direction_id == 1:
+                                color = 'green'
+                                prefix = "Passed"
+                        else:
+                            if direction_id == 0:
+                                color = 'green'
+                                prefix = "Passed"
+                    
+                        
+                    folium.Marker([station['stop_lat'], station['stop_lon']], tooltip=f"{" - ".join([prefix,station['stop_name']])}", icon=folium.Icon(icon=icon, prefix="fa", color=color)).add_to(m2)
+                folium.Marker([train_data['latitude'], train_data['longitude']], tooltip=f"{train_data['label']} - speed: {train_data['speed']} km/h", icon=folium.Icon(icon='train', prefix='fa', color='blue')).add_to(m2)
+                map_data2 = st_folium(m2, key="fig2", width=700, height=700)
 
 
-            lat_train, lon_train = train_data['latitude'], train_data['longitude']
-            geo_df = train_stops[['stop_lat', 'stop_lon', 'stop_name']].copy()
-            geo_df['color'] = "#FF0000"
+
+        st.markdown(
+            f"""
+            <div style="text-align:right; display: flex; justfy-content: left;">
+                <div style="width: 10rem;margin-right: 10px;white-space: normal;">Station</div>
+            </div>
+            """, 
+            unsafe_allow_html=True)
+        for station_id, station in enumerate(train_stops['stop_name'].squeeze().to_list()):
+            color = "#FF0000"
             if direction_id == 1:
-                geo_df.iloc[:nearest_station_index, geo_df.columns.get_loc('color')] = '#00FF00'
+                if station_id < nearest_station_index:
+                    color = "#016620"
+                if station_id == nearest_station_index:
+                    color = "#0000FF"
             else:
-                geo_df.iloc[nearest_station_index + 1:, geo_df.columns.get_loc('color')] = '#00FF00'
-            geo_df.loc[geo_df['stop_name'] == board_station, 'color'] = '#FFA500'
-            geo_df['size'] = '100'
-            geo_df = pd.concat(
-                [pd.DataFrame([[lat_train, lon_train, 'train','#FFFFFF',200]], columns=geo_df.columns), geo_df], ignore_index=True)
-            st.map(geo_df, latitude='stop_lat', longitude='stop_lon', color='color')
-
+                if station_id > nearest_station_index:
+                    color = "#016620"
+                if station_id == nearest_station_index:
+                    color = "#0000FF"
+            if station == board_station:
+                color = "#FFA500"
             st.markdown(
                 f"""
-                <div style="text-align:right; display: flex; justfy-content: left;">
-                    <div style="width: 10rem;margin-right: 10px;white-space: normal;">Station</div>
+                <div style="text-align:right; display: flex; justfy-content: left; background-color:{color};">
+                    <div style="width: 50%;">{station}</div>
                 </div>
                 """, 
                 unsafe_allow_html=True)
-            for station_id, station in enumerate(train_stops['stop_name'].squeeze().to_list()):
-                color = "#FF0000"
-                if direction_id == 1:
-                    if station_id < nearest_station_index:
-                        color = "#016620"
-                    if station_id == nearest_station_index:
-                        color = "#999999"
-                else:
-                    if station_id > nearest_station_index:
-                        color = "#016620"
-                    if station_id == nearest_station_index:
-                        color = "#999999"
-                if station == board_station:
-                    color = "#FFA500"
-                st.markdown(
-                    f"""
-                    <div style="text-align:right; display: flex; justfy-content: left; background-color:{color};">
-                        <div style="width: 50%;">{station}</div>
-                    </div>
-                    """, 
-                    unsafe_allow_html=True)
 
 
 

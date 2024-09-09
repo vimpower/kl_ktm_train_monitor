@@ -224,13 +224,8 @@ with tab2:
                             color = 'lightgray'
                             prefix = "Nearby Station"
                         elif id < nearest_station_index:
-                            if direction_id == 1:
-                                color = 'green'
-                                prefix = "Passed"
-                        else:
-                            if direction_id == 0:
-                                color = 'green'
-                                prefix = "Passed"
+                            color = 'green'
+                            prefix = "Passed"
                     
                         
                     folium.Marker([station['stop_lat'], station['stop_lon']], tooltip=f"{" - ".join([prefix,station['stop_name']])}", icon=folium.Icon(icon=icon, prefix="fa", color=color)).add_to(m2)
@@ -242,28 +237,24 @@ with tab2:
         st.markdown(
             f"""
             <div style="text-align:right; display: flex; justfy-content: left;">
-                <div style="width: 10rem;margin-right: 10px;white-space: normal;">Station</div>
+                <div style="width: 50%;margin-right: 10%;white-space: normal;">Station</div>
+                <div style="width: 5%;margin-right: 37%;white-space: normal;">Status</div>
             </div>
             """, 
             unsafe_allow_html=True)
         for station_id, station in enumerate(train_stops['stop_name'].squeeze().to_list()):
             color = "#FF0000"
-            if direction_id == 1:
-                if station_id < nearest_station_index:
-                    color = "#016620"
-                if station_id == nearest_station_index:
-                    color = "#0000FF"
-            else:
-                if station_id > nearest_station_index:
-                    color = "#016620"
-                if station_id == nearest_station_index:
-                    color = "#0000FF"
+            if station_id < nearest_station_index:
+                color = "#016620"
+            if station_id == nearest_station_index:
+                color = "#0000FF"
             if station == board_station:
                 color = "#FFA500"
             st.markdown(
                 f"""
-                <div style="text-align:right; display: flex; justfy-content: left; background-color:{color};">
+                <div style="text-align:right; display: flex; justfy-content: left; ">
                     <div style="width: 50%;">{station}</div>
+                    <div style="width: 1rem; height: 1rem; margin-left: 10%;background-color:{color}; border-width: 1rem; border-radius: 100%"></div>
                 </div>
                 """, 
                 unsafe_allow_html=True)
